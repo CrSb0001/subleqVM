@@ -63,3 +63,93 @@ def _subleq_interpreter(
             raise SegmentationFaultError(e.args[0])
     
     return out
+
+def _subleq_assm(
+    vars: dict[str, int],
+    src: str,
+    *,
+    custom_defs: dict[str, str] | None = None
+) -> list[int]:
+    instrs: list[tuple[str, str, str]] = []
+    labels: dict[str, int] = dict()
+    
+    curr_addr: int = 0
+    for line in src.splitlines():
+        line = line.split(';', maxsplit = 1)[0].strip()
+        if len(line) == 0:
+            continue
+        
+        operands: list[str] = []
+        for operand in line.split(', '):
+            if len(operand) == 0:
+                continue
+            
+            if custom_defs is not None and operand in custom_defs:
+                operand = custom_defs[operand]
+            
+            operands += operand,
+        
+        if len(operands) == 1 and operands[0].endswith(':'):
+            label_name: str = operands[0][:-1]
+            
+            labels[label_name] = curr_addr
+        
+        elif len(operands) == 2:
+            operands += [curr_addr + 3]
+            instrs += tuple(operands),
+            curr_addr += 3
+        
+        else:
+            raise ValueError(f"Invalid operand: `{operands!r}`")
+    
+    var_addrs: dict[str, int] = dict()
+    var_segmt: list[int] = []
+    for var_name, init_val in vars.items():
+        var_segmt += init_val,
+        var_addrs[var_name] = curr_addr
+        curr_addr += 1
+    
+    out: list[int] = []
+    for line, instr in enumerate(instrs):
+        (src_, dest, jmp) = instr
+        if src_ == r'%zero':
+            out += -1,
+        
+        elif src_ in vars:
+            out += var_addrs[src_],
+        
+        else:
+            try:
+                out += int(src_),
+            
+            except ValueError:
+                raise ValueError(f'{line=}: invalid src op: `{src_}`')
+        
+        if dest == r'%out':
+            out += -1,
+        
+        elif dest in vars:
+            out += var_addrs[dest],
+        
+        else:
+            try:
+                out += int(dest)
+            
+            except ValueError:
+                raise ValueError(f'{line=}: invalid dest op: `{dest}`')
+        
+        if jmp == r'%halt':
+            out += -1,
+        
+        elif jmp in labels:
+            out += labels[jmp],
+        
+        else:
+            try:
+                out += int(jmp),
+            
+            except ValueError:
+                raise ValueError(f'{line=}: invalid jmp op: `{jmp}`')
+    
+    out.extend(var_sgmt)
+    return out
